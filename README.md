@@ -328,10 +328,14 @@ Append `extended` for full results: `/retro extended`, `/scitech extended`
 | `/explain <topic>` | Detailed explanation |
 | `/explainlike5 <topic>` | Explain like I'm 5 years old |
 | 🎤 *Send voice message* | AI processes → replies with voice (or text fallback if TTS unavailable) |
-| 📷 *Send photo* | AI describes what it sees |
-| 🎥 *Send video* | AI analyzes video content |
+| 📷 *Send photo* | AI describes what it sees (Gemini Vision, 3-model fallback) |
+| 📷 *Send photo + caption* | AI analyzes the image in the context of your message |
+| 🎥 *Send video* (≤ 20 MB) | AI analyzes video content via Gemini File API |
+| 🎥 *Send video + caption* | AI analyzes the video in the context of your message |
 
 AI commands try providers in order: **Gemini → GPT-5 (GitHub) → NVIDIA → Cerebras → Mistral**. The first available provider with remaining quota is used.
+
+Photo and video analysis use **Gemini Vision** exclusively (3-model fallback: gemini-2.0-flash → gemini-2.5-flash → gemini-2.0-flash-lite). Photos are sent as inline base64; videos are uploaded via the Gemini File API. If vision analysis fails and no caption was provided, the bot returns a friendly error instead of falling through to a text-only LLM.
 
 Voice transcription tries: **gemini-2.0-flash → gemini-2.5-flash → gemini-2.0-flash-lite → Groq Whisper**. Each Gemini model has its own rate limit (~15 RPM / 1500 RPD), so quota exhaustion on one model doesn't affect others.
 
@@ -348,21 +352,26 @@ Telegram Trigger → Parse Command
         │             │               ┌─────┴──────┐
         ▼             ▼               ▼            ▼
    Send Help    NVD API →        Call AI       Send "⏳" →
-                Format →         (Gemini       Capture ID →
-                Send             → NVIDIA      9 RSS/API
-                                 fallback)     sources →
-                                    │          8 Merge nodes →
-                                    ▼          Tag + Condense
-                              Is Audio?             │
-                               ┌──┴──┐        ┌─────┴──────┐
-                               ▼     ▼        ▼            ▼
-                            TTS?   Edit    Edit "⏳"    Delete "⏳" →
-                             │     "🔍"    with text    Write HTML →
-                          ┌──┴──┐  (text                Send link
-                          ▼     ▼  fallback)
-                       Voice  Edit
-                       reply  "🎤 Here's
-                              your answer:"
+                Format →         ┌──────────┐  Capture ID →
+                Send             │ 🎤 Voice  │  9 RSS/API
+                                 │ 📷 Photo  │  sources →
+                                 │ 🎥 Video  │  8 Merge nodes →
+                                 │ → Gemini  │  Tag + Condense
+                                 │   Vision  │       │
+                                 │ + text AI │  ┌─────┴──────┐
+                                 │ fallback  │  ▼            ▼
+                                 └─────┬─────┘ Edit "⏳"  Delete "⏳" →
+                                       ▼      with text   Write HTML →
+                                 Is Audio?                 Send link
+                                  ┌──┴──┐
+                                  ▼     ▼
+                               TTS?   Edit
+                                │     "🔍"
+                             ┌──┴──┐  (text
+                             ▼     ▼  fallback)
+                          Voice  Edit
+                          reply  "🎤 Here's
+                                 your answer:"
 ```
 
 ### How the Digest Works
@@ -451,6 +460,9 @@ Replace or reorder models. All models must support audio input via the Gemini `v
 | Voice transcription fails | Gemini models are tried in order (2.0-flash → 2.5-flash → 2.0-flash-lite), each with separate rate limits. If all 3 are exhausted, Groq Whisper is the last resort. **Note:** Groq multipart upload is experimental on n8n 2.x due to `httpRequest` binary handling limitations — it may not work reliably on all n8n versions. Check `Call AI` node execution log for provider-specific errors. |
 | Voice reply sent as text | The `Is Audio Response?` IF node must use a **boolean** condition (not string) checking `respondAsAudio`. Re-import the workflow if it was modified. |
 | Voice reply doesn't work | Google TTS has rate limits. `Fetch TTS Audio` has `continueOnFail` enabled — if TTS fails, the bot automatically falls back to text with a "🎤 Voice reply unavailable" indicator. Check the node execution log for details. |
+| Photo analysis not working | Requires `N8N_GEMINI_API_KEY`. The bot will still reply with text using the original caption. Check the `Call AI` execution log for photo-specific errors. |
+| Video analysis not working | Requires `N8N_GEMINI_API_KEY`. Videos must be ≤ 20 MB (Telegram's getFile limit). The File API upload + polling can take up to 60 seconds for longer clips. Check `Call AI` execution log for details. |
+| "Video too large" error | Expected for files > 20 MB — Telegram's cloud download cap. Compress or trim the video. |
 | Digest link returns 404 | The `nginx-digest` container is running but no digest has been generated yet. Trigger `/all` or wait for the cron to run. |
 | Digest page not accessible | Confirm your reverse proxy / Cloudflare Tunnel routes `digest.yourdomain.com` → `localhost:8080`. Check `docker compose ps` to verify `nginx-digest` is running. |
 
@@ -460,13 +472,13 @@ Replace or reorder models. All models must support audio input via the Gemini `v
 
 | Variable | Required | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | Yes* | Google Gemini API key for AI features |
+| `GEMINI_API_KEY` | Yes* | Google Gemini API key for AI features (also powers photo/video vision analysis and voice transcription) |
 | `N8N_GITHUB_GPT5_KEY` | No | GitHub personal access token — GPT-5 via GitHub Models (fallback 2) |
 | `NVIDIA_API_KEY` | No | NVIDIA API key — Llama 3.3 70B (fallback 3) |
 | `N8N_CEREBRAS_API_KEY` | No | Cerebras API key — Llama 3.3 70B with generous free quota (fallback 4) |
 | `N8N_MISTRAL_API_KEY` | No | Mistral API key — Mistral Small (fallback 5) |
 | `N8N_GROQ_API_KEY` | No* | Groq API key — Whisper `whisper-large-v3-turbo` for voice transcription (fallback if Gemini quota exhausted) |
-| `TELEGRAM_BOT_TOKEN` | Yes | Your Telegram bot token — also used by `Call AI` to download voice messages for transcription |
+| `TELEGRAM_BOT_TOKEN` | Yes | Your Telegram bot token — also used by `Call AI` to download voice messages, photos, and videos for AI analysis |
 | `TELEGRAM_CHAT_ID` | Yes | Your Telegram chat ID (used for scheduled daily digests) |
 | `DOMAIN` | Yes | Public domain for your n8n instance (e.g. `n8n.yourdomain.com`) |
 | `DIGEST_PUBLIC_URL` | No | Public URL where long digests are published (e.g. `https://digest.yourdomain.com`). If unset, long digests are silently skipped. |
@@ -482,12 +494,12 @@ Replace or reorder models. All models must support audio input via the Gemini `v
 
 ## Workflow Stats
 
-- **67 nodes**, **58 connections**
-- 11 Telegram nodes (trigger + send/edit/delete)
+- **69 nodes**, **86 connections**
+- 13 Telegram nodes (trigger + send/edit/delete, including photo/video scaffold)
 - 9 parallel RSS/API fetchers
 - 8 chained Merge nodes
 - 3 Code nodes for AI:
-  - `Call AI` — on-demand commands (`/search`, `/explain`, `/explainlike5`, voice/media)
+  - `Call AI` — on-demand commands (`/search`, `/explain`, `/explainlike5`, voice/photo/video)
   - `Generate AI Briefing` — digest-time executive summary + Story of the Day (one call per digest run)
   - `Deduplicate BRPT` — groups same-event articles from Brazil & Portugal into single entries with multi-source links
 
