@@ -1,0 +1,6 @@
+.env
+.DS_Store
+.claude
+n8n_data
+digest-files
+postgres

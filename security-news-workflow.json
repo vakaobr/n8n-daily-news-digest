@@ -1,0 +1,1795 @@
+{
+  "name": "Daily News Clipper (Telegram)",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "hour": 8,
+              "minute": 0
+            }
+          ]
+        }
+      },
+      "name": "Cron Daily",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        100,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        2200
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const msg_obj = items[0].json.message || {};\nconst chatId = (msg_obj.chat?.id || '').toString();\nconst text = (msg_obj.text || msg_obj.caption || '').trim();\nconst msgLower = text.toLowerCase();\n\nconst hasPhoto = !!(msg_obj.photo && msg_obj.photo.length > 0);\nconst hasVoice = !!msg_obj.voice;\nconst hasVideo = !!msg_obj.video;\nconst hasMedia = hasPhoto || hasVoice || hasVideo;\n\nif (hasMedia && !text) {\n  const mediaType = hasPhoto ? 'photo' : hasVoice ? 'voice' : 'video';\n  let fileId = '';\n  if (hasPhoto) fileId = msg_obj.photo[msg_obj.photo.length - 1].file_id;\n  else if (hasVoice) fileId = msg_obj.voice.file_id;\n  else if (hasVideo) fileId = msg_obj.video.file_id;\n  return [{ json: { action: 'ai', command: 'explain', query: 'Describe and explain what you see/hear', chatId, mediaType, fileId, respondAsAudio: hasVoice } }];\n}\n\nconst cveMatch = text.match(/^\\/cve\\s+(CVE-\\d{4}-\\d{4,})/i);\nif (cveMatch) return [{ json: { action: 'cve_lookup', cveId: cveMatch[1].toUpperCase(), chatId } }];\n\nconst searchMatch = text.match(/^\\/search\\s+(.+)/i);\nif (searchMatch) return [{ json: { action: 'ai', command: 'search', query: searchMatch[1], chatId, respondAsAudio: false } }];\n\nconst explainMatch = text.match(/^\\/explain\\s+(.+)/i);\nif (explainMatch) {\n  let fileId = '', mediaType = null;\n  if (hasPhoto) { mediaType = 'photo'; fileId = msg_obj.photo[msg_obj.photo.length - 1].file_id; }\n  else if (hasVoice) { mediaType = 'voice'; fileId = msg_obj.voice.file_id; }\n  else if (hasVideo) { mediaType = 'video'; fileId = msg_obj.video.file_id; }\n  return [{ json: { action: 'ai', command: 'explain', query: explainMatch[1], chatId, mediaType, fileId, respondAsAudio: hasVoice } }];\n}\n\nconst eli5Match = text.match(/^\\/explainlike5\\s+(.+)/i);\nif (eli5Match) return [{ json: { action: 'ai', command: 'eli5', query: eli5Match[1], chatId, respondAsAudio: hasVoice || false } }];\n\nconst categoryMap = {\n  '/cve':'cve','/security':'security_news','/services':'service',\n  '/retro':'retrogaming','/scitech':'scitech','/world':'world',\n  '/hn':'hackernews','/brpt':'brpt','/youtube':'youtube',\n  '/all':'all','/extended':'all','/help':'help'\n};\nconst isExtended = msgLower === '/extended' || msgLower.endsWith(' full') || msgLower.endsWith(' extended');\nconst cleanCmd = msgLower.replace(/\\s+(full|extended)$/, '');\nconst category = categoryMap[cleanCmd] || null;\n\nif (msgLower === '/help' || !category) {\n  return [{ json: { action: 'help', chatId,\n    text: '📋 <b>Commands</b>\\n\\n' +\n      '📰 <b>News Digest</b>\\n' +\n      '/all — Digest (message or HTML)\\n' +\n      '/extended — Full digest (all items)\\n\\n' +\n      '🔍 <b>Categories</b>\\n' +\n      '/cve — CVE Alerts\\n' +\n      '/cve CVE-2024-XXXX — Lookup specific CVE\\n' +\n      '/security — Security News\\n' +\n      '/services — Service Disruptions\\n' +\n      '/retro — Retrogaming / Modding\\n' +\n      '/scitech — Science &amp; Tech\\n' +\n      '/world — World News\\n' +\n      '/hn — Hacker News\\n' +\n      '/brpt — Brazil &amp; Portugal\\n' +\n      '/youtube — YouTube\\n\\n' +\n      '🤖 <b>AI-Powered (Gemini/ChatGPT/NVIDIA)</b>\\n' +\n      '/search &lt;query&gt; — Web search via Google\\n' +\n      '/explain &lt;topic&gt; — Explain a topic\\n' +\n      '/explainlike5 &lt;topic&gt; — Explain like I\\'m 5\\n\\n' +\n      '🎤 Send voice, photo, or video for AI analysis.\\n' +\n      'Voice input → voice reply.\\n\\n' +\n      '💡 Add \"extended\" for full news results'\n  }}];\n}\n\nreturn [{ json: { action: 'fetch', category, chatId, extended: isExtended } }];"
+      },
+      "name": "Parse Command",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        2200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"action\"]}}",
+              "value2": "help"
+            }
+          ]
+        }
+      },
+      "name": "Is Help?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        500,
+        2200
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json[\"chatId\"]}}",
+        "text": "={{$json[\"text\"]}}",
+        "additionalFields": {
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "name": "Send Help",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        700,
+        2100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"action\"]}}",
+              "value2": "cve_lookup"
+            }
+          ]
+        }
+      },
+      "name": "Is CVE Lookup?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        700,
+        2300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"action\"]}}",
+              "value2": "ai"
+            }
+          ]
+        }
+      },
+      "name": "Is AI?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        900,
+        2400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={{$json[\"cveId\"]}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "responseFormat": "json"
+      },
+      "name": "Fetch Single CVE",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        2100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "NVD_CREDENTIAL_ID",
+          "name": "NVD API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const chatId = $node['Is CVE Lookup?'].json.chatId;\nconst cveId = $node['Is CVE Lookup?'].json.cveId;\nconst vulns = items[0].json.vulnerabilities || [];\nif (!vulns.length) return [{ json: { chatId, text: `❌ Not found: ${cveId}` } }];\nconst cve = vulns[0].cve;\nconst desc = cve.descriptions?.find(d=>d.lang==='en')?.value || 'No description';\nconst m = cve.metrics?.cvssMetricV31?.[0] || cve.metrics?.cvssMetricV30?.[0] || cve.metrics?.cvssMetricV2?.[0];\nconst cvss = m?.cvssData?.baseScore || 'N/A';\nconst sev = m?.cvssData?.baseSeverity || m?.baseSeverity || 'N/A';\nconst vec = m?.cvssData?.vectorString || 'N/A';\nconst pub = cve.published ? new Date(cve.published).toLocaleDateString('en-GB') : 'N/A';\nconst cwes = (cve.weaknesses||[]).flatMap(w=>w.description||[]).filter(d=>d.lang==='en').map(d=>d.value).join(', ') || 'N/A';\nconst refs = (cve.references||[]).slice(0,5).map(r=>`  • ${r.url}`).join('\\n');\nconst lines = [`🛡️ ${cve.id}`,'',`📊 CVSS: ${cvss} (${sev})`,`📐 ${vec}`,`🔗 CWE: ${cwes}`,`📅 ${pub}`,'',desc.length>500?desc.substring(0,500)+'...':desc];\nif (refs) lines.push('','🔗 Refs:',refs);\nlines.push('',`🌐 https://nvd.nist.gov/vuln/detail/${cve.id}`);\nreturn [{ json: { chatId, text: lines.join('\\n') } }];"
+      },
+      "name": "Format CVE Detail",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        2100
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json[\"chatId\"]}}",
+        "text": "={{$json[\"text\"]}}",
+        "additionalFields": {
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "name": "Send CVE Detail",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        2100
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json[\"chatId\"]}}",
+        "text": "🔍 Searching and analyzing...",
+        "additionalFields": {}
+      },
+      "name": "Send AI Thinking",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        2500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"respondAsAudio\"]}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Is Audio Response?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        2500
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json[\"chatId\"]}}",
+        "messageId": "={{$json[\"msgId\"]}}",
+        "text": "={{$json[\"text\"]}}",
+        "operation": "editMessageText",
+        "additionalFields": {
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "name": "Edit AI Response",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        2400
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const chatId = items[0].json.chatId;\nconst msgId = items[0].json.msgId;\nconst plainText = items[0].json.plainText || '';\nconst text = items[0].json.text || '';\n\n// Trim to ~30s of speech (~450 chars at normal rate)\nconst trimmed = plainText.length > 450 ? plainText.substring(0, 450) + '...' : plainText;\nconst chunk = trimmed.substring(0, 200);\nconst lang = /[àáâãéêíóôõúçÀÁÂÃÉÊÍÓÔÕÚÇ]/.test(chunk) ? 'pt' : 'en';\nconst ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${lang}&q=${encodeURIComponent(chunk)}`;\n\nreturn [{ json: { chatId, msgId, text, ttsUrl, lang } }];"
+      },
+      "name": "Prepare TTS",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        2600
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json[\"ttsUrl\"]}}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": true
+            }
+          }
+        },
+        "responseFormat": "file"
+      },
+      "name": "Fetch TTS Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        2600
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "functionCode": "const prev = $node['Prepare TTS'].json;\nconst audioData = items[0].binary?.data || items[0].binary?.response;\nif (!audioData) {\n  // TTS failed — add indicator and fall back to text-only\n  const fallbackText = prev.text + '\\n\\n<i>🎤 Voice reply unavailable — sent as text.</i>';\n  return [{ json: { chatId: prev.chatId, msgId: prev.msgId, text: fallbackText, sendAudio: false } }];\n}\nreturn [{\n  json: { chatId: prev.chatId, msgId: prev.msgId, text: '🎤 <b>Here\\'s your answer:</b>', sendAudio: true },\n  binary: { data: { ...audioData, fileName: 'response.mp3', mimeType: 'audio/mpeg' } }\n}];"
+      },
+      "name": "Prepare Audio Send",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2500,
+        2600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendAudio",
+        "chatId": "={{$json[\"chatId\"]}}",
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "additionalFields": {}
+      },
+      "name": "Send Voice Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        2700,
+        2550
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json[\"chatId\"]}}",
+        "messageId": "={{$json[\"msgId\"]}}",
+        "text": "={{$json[\"text\"]}}",
+        "operation": "editMessageText",
+        "additionalFields": {
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "name": "Edit After Audio",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        2700,
+        2700
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json[\"chatId\"]}}",
+        "text": "⏳ Fetching news from all sources...",
+        "additionalFields": {}
+      },
+      "name": "Send Processing",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        2800
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const orig = $node['Is AI?'].json;\nconst processingMsgId = items[0].json.result?.message_id || items[0].json.message_id || '';\nreturn [{ json: { ...orig, processingMsgId } }];"
+      },
+      "name": "Capture Msg ID",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        2800
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return items;"
+      },
+      "name": "Route to Fetchers",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        2800
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {},
+        "responseFormat": "json"
+      },
+      "name": "Fetch CVEs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        300,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "NVD_CREDENTIAL_ID",
+          "name": "NVD API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const _d=s=>s?s.replace(/&amp;/g,String.fromCharCode(38)).replace(/&lt;/g,String.fromCharCode(60)).replace(/&gt;/g,String.fromCharCode(62)).replace(/&#(\\d+);/g,(m,c)=>String.fromCharCode(c)).replace(/&quot;/g,String.fromCharCode(34)).replace(/&apos;/g,String.fromCharCode(39)).replace(/&#x([0-9a-f]+);/gi,(m,c)=>String.fromCharCode(parseInt(c,16))):s;const kw=['AWS','Kubernetes','Terraform'];const cutoff=new Date(Date.now()-48*60*60*1000);const vulns=items[0].json.vulnerabilities||[];const r=vulns.map(v=>{const c=v.cve,d=c.descriptions?.find(x=>x.lang==='en')?.value||'';const m=c.metrics?.cvssMetricV31?.[0]||c.metrics?.cvssMetricV30?.[0]||c.metrics?.cvssMetricV2?.[0];const s=m?.cvssData?.baseScore||0;const pub=c.published?new Date(c.published):null;const isRecent=!pub||pub>=cutoff;const isCritical=s>=9.0;const isRelevant=kw.some(k=>d.includes(k))&&s>=7;if(isRecent&&(isCritical||isRelevant))return{json:{type:'cve',title:_d(c.id),link:`https://nvd.nist.gov/vuln/detail/${c.id}`,score:s}};}).filter(Boolean);return r;"
+      },
+      "name": "Filter CVEs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        500,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [\n  { json: { url: 'https://feeds.feedburner.com/TheHackersNews' } },\n  { json: { url: 'https://feeds.securityweek.com/Securityweek' } }\n];"
+      },
+      "name": "Security News URLs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json[\"url\"]}}"
+      },
+      "name": "Security News RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [\n  { json: { url: 'https://www.cloudflarestatus.com/history.atom' } },\n  { json: { url: 'https://status.aws.amazon.com/rss/all.rss' } },\n  { json: { url: 'https://status.hetzner.com/history.rss' } },\n  { json: { url: 'https://status.atlassian.com/history.rss' } }\n];"
+      },
+      "name": "Service URLs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json[\"url\"]}}"
+      },
+      "name": "Service Status RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        500,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [\n  { json: { url: 'https://www.retrorgb.com/feed' } },\n  { json: { url: 'https://retrododo.com/feed/' } },\n  { json: { url: 'https://hackaday.com/feed/' } },\n  { json: { url: 'https://wololo.net/feed/' } }\n];"
+      },
+      "name": "Retrogaming URLs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json[\"url\"]}}"
+      },
+      "name": "Retrogaming RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        500,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [\n  { json: { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Science.xml', source: 'nyt' } },\n  { json: { url: 'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml', source: 'bbc' } },\n  { json: { url: 'https://www.theguardian.com/science/rss', source: 'guardian' } },\n  { json: { url: 'https://arstechnica.com/feed/', source: 'arstechnica' } },\n  { json: { url: 'https://www.technologyreview.com/feed/', source: 'mittr' } },\n  { json: { url: 'https://feeds.nature.com/nature/rss/current', source: 'nature' } }\n];"
+      },
+      "name": "SciTech URLs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json[\"url\"]}}"
+      },
+      "name": "SciTech RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        500,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [\n  { json: { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', source: 'bbc' } },\n  { json: { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', source: 'nyt' } },\n  { json: { url: 'https://www.theguardian.com/world/rss', source: 'guardian' } },\n  { json: { url: 'https://www.aljazeera.com/xml/rss/all.xml', source: 'aljazeera' } },\n  { json: { url: 'https://feeds.reuters.com/reuters/worldNews', source: 'reuters' } }\n];"
+      },
+      "name": "World News URLs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        1300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json[\"url\"]}}"
+      },
+      "name": "World News RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        500,
+        1300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [\n  { json: { url: 'https://feeds.folha.uol.com.br/emcimadahora/rss091.xml', source: 'folha' } },\n  { json: { url: 'https://g1.globo.com/rss/g1/', source: 'g1' } },\n  { json: { url: 'https://rss.uol.com.br/feed/noticias.xml', source: 'uol' } },\n  { json: { url: 'https://feeds.renascenca.pt/rss', source: 'renascenca' } },\n  { json: { url: 'https://www.publico.pt/api/list/feed', source: 'publico' } },\n  { json: { url: 'https://rss.sapo.pt/sapo/desporto', source: 'sapo' } },\n  { json: { url: 'https://observador.pt/feed/', source: 'observador' } }\n];"
+      },
+      "name": "BR PT URLs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        1700
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [\n  { json: { url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCeP4Yv3s4RvS0-6d9OInRMw', channel: 'Real Civil Engineer' } },\n  { json: { url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCwpHKudUkP5tNgmMdexB3ow', channel: 'Mentour Pilot' } },\n  { json: { url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCz9boSY06_KXeVrAv70qysA', channel: 'DexTag' } },\n  { json: { url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCV-cMKRHbZMoHdb5fnoi4Aw', channel: 'papaidotanque' } }\n];"
+      },
+      "name": "YouTube URLs",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        300,
+        1900
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json[\"url\"]}}"
+      },
+      "name": "YouTube RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        500,
+        1900
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://hnrss.org/frontpage?points=30&count=30"
+      },
+      "name": "Hacker News RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        300,
+        1500
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const _d=s=>s?s.replace(/&amp;/g,String.fromCharCode(38)).replace(/&lt;/g,String.fromCharCode(60)).replace(/&gt;/g,String.fromCharCode(62)).replace(/&#(\\d+);/g,(m,c)=>String.fromCharCode(c)).replace(/&quot;/g,String.fromCharCode(34)).replace(/&apos;/g,String.fromCharCode(39)).replace(/&#x([0-9a-f]+);/gi,(m,c)=>String.fromCharCode(parseInt(c,16))):s;const re=/breach|ransomware|malware|zero.?day|0.?day|exploit|vulnerabilit|CVE-|patch|backdoor|supply.chain|data.leak|phishing|DDoS|remote.code|RCE|privilege.escal|auth.?bypass|spyware|trojan|botnet|rootkit|cryptojack|credential.?theft|hack(ed|er|ing)|cyberattack|threat.actor|\\bAPT\\b|infosec|security.incident|data.breach|critical.update|arbitrary.code/i;const r=items.filter(i=>re.test((_d(i.json.title)||'')+' '+(_d(i.json.content)||'').substring(0,500))).map(i=>({json:{type:'security_news',title:_d(i.json.title),link:i.json.link}}));return r;"
+      },
+      "name": "Filter Security News",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const _d=s=>s?s.replace(/&amp;/g,String.fromCharCode(38)).replace(/&lt;/g,String.fromCharCode(60)).replace(/&gt;/g,String.fromCharCode(62)).replace(/&#(\\d+);/g,(m,c)=>String.fromCharCode(c)).replace(/&quot;/g,String.fromCharCode(34)).replace(/&apos;/g,String.fromCharCode(39)).replace(/&#x([0-9a-f]+);/gi,(m,c)=>String.fromCharCode(parseInt(c,16))):s;\nfunction getDomain(l){try{const h=new URL(l).hostname.replace(/^www\\./,'');const p=h.split('.');return p.length>=2?p.slice(-2).join('.'):h;}catch(e){return null;}}\nconst re=/incident|disruption|outage|degraded|degradation|partial.outage|maintenance|unavailable|intermittent|investigating|identified|elevated.latency|error.rate|service.failure|unresolved/i;\nconst r=items.filter(i=>re.test((_d(i.json.title)||'')+' '+(_d(i.json.content)||''))).map(i=>({json:{type:'service',title:_d(i.json.title),link:i.json.link,source:getDomain(i.json.link)}}));\nreturn r;"
+      },
+      "name": "Filter Services",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const _d=s=>s?s.replace(/&amp;/g,String.fromCharCode(38)).replace(/&lt;/g,String.fromCharCode(60)).replace(/&gt;/g,String.fromCharCode(62)).replace(/&#(\\d+);/g,(m,c)=>String.fromCharCode(c)).replace(/&quot;/g,String.fromCharCode(34)).replace(/&apos;/g,String.fromCharCode(39)).replace(/&#x([0-9a-f]+);/gi,(m,c)=>String.fromCharCode(parseInt(c,16))):s;const re=/retro|emulat|jailbreak|homebrew|mod|CFW|custom.firmware|\\bROM\\b|FPGA|MiSTer|Analogue|PS.Vita|\\bPSP\\b|Nintendo|3DS|Switch|Game.Boy|SNES|\\bNES\\b|Mega.Drive|Genesis|Dreamcast|Saturn|PlayStation|\\bXbox\\b|modchip|softmod|piracy|Steam.Deck|Miyoo|Anbernic|Retroid|EmuDeck|Batocera|RetroArch|Libretro|ScummVM|OpenEmu|Lakka|RetroPie|Recalbox|hack(?:ed|er|ing)/i;const r=items.filter(i=>re.test((_d(i.json.title)||'')+' '+(_d(i.json.content)||''))).map(i=>({json:{type:'retrogaming',title:_d(i.json.title),link:i.json.link}}));return r;"
+      },
+      "name": "Filter Retrogaming",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const _d=s=>s?s.replace(/&amp;/g,String.fromCharCode(38)).replace(/&lt;/g,String.fromCharCode(60)).replace(/&gt;/g,String.fromCharCode(62)).replace(/&#(\\d+);/g,(m,c)=>String.fromCharCode(c)).replace(/&quot;/g,String.fromCharCode(34)).replace(/&apos;/g,String.fromCharCode(39)).replace(/&#x([0-9a-f]+);/gi,(m,c)=>String.fromCharCode(parseInt(c,16))):s;const cutoff=new Date(Date.now()-48*60*60*1000);const normalize=s=>s.toLowerCase().replace(/[^a-z\\u00c0-\\u024f0-9 ]/g,'').split(/\\s+/).filter(w=>w.length>4);const stop=[\"about\", \"after\", \"would\", \"could\", \"should\", \"their\", \"there\", \"these\", \"those\", \"which\", \"where\", \"being\", \"other\", \"under\", \"still\", \"first\", \"study\", \"found\", \"using\", \"shows\", \"makes\", \"years\", \"times\", \"today\", \"report\", \"says\", \"claim\", \"plans\", \"seeks\", \"wants\", \"finds\", \"looks\", \"takes\", \"needs\", \"since\", \"while\", \"every\", \"given\", \"might\", \"shall\", \"across\", \"almost\", \"cannot\", \"comes\", \"early\", \"large\", \"light\", \"major\", \"month\", \"named\", \"never\", \"often\", \"paper\", \"place\", \"small\", \"space\", \"thing\", \"three\", \"until\", \"watch\", \"water\", \"whole\", \"known\", \"group\", \"cause\", \"start\", \"point\", \"human\", \"level\", \"model\", \"among\", \"based\", \"build\", \"bring\", \"allow\", \"leave\", \"learn\"];const highSignal=/break(?:ing)?|exclusive|urgent|first.?ever|record.?break|landmark|major.discovery|nobel|breakthrough|launch(?:es|ed)?|announced?|reveal(?:s|ed)?/i;const topSources=[\"nytimes.com\", \"bbc.co.uk\", \"nature.com\", \"arstechnica.com\", \"technologyreview.com\", \"theguardian.com\"];const recent=items.filter(i=>{const d=i.json.pubDate||i.json.published||i.json.isoDate;return !d||new Date(d)>=cutoff;});const pool=recent.length>0?recent:items;const ks={};for(const item of pool){const src=item.json.source||item.json.link||'';for(const w of normalize(_d(item.json.title)||'')){if(stop.includes(w))continue;if(!ks[w])ks[w]=new Set();ks[w].add(src);}}const trending=new Set(Object.keys(ks).filter(k=>ks[k].size>=2));const seen=new Set();const trendHits=pool.filter(i=>{const t=_d(i.json.title)||'';const words=normalize(t);const hit=words.some(w=>trending.has(w));if(hit&&!seen.has(t)){seen.add(t);return true;}return false;});const bypass=pool.filter(i=>{const t=_d(i.json.title)||'';if(seen.has(t))return false;const src=i.json.link||'';const isTop=topSources.some(s=>src.includes(s));const isSignal=highSignal.test(t);if(isTop&&isSignal){seen.add(t);return true;}return false;});let r=[...trendHits,...bypass].map(i=>({json:{type:'scitech',title:_d(i.json.title),link:i.json.link}})  );if(r.length===0)r=pool.slice(0,3).map(i=>({json:{type:'scitech',title:_d(i.json.title),link:i.json.link}})  );return r;"
+      },
+      "name": "Filter SciTech Trending",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const _d=s=>s?s.replace(/&amp;/g,String.fromCharCode(38)).replace(/&lt;/g,String.fromCharCode(60)).replace(/&gt;/g,String.fromCharCode(62)).replace(/&#(\\d+);/g,(m,c)=>String.fromCharCode(c)).replace(/&quot;/g,String.fromCharCode(34)).replace(/&apos;/g,String.fromCharCode(39)).replace(/&#x([0-9a-f]+);/gi,(m,c)=>String.fromCharCode(parseInt(c,16))):s;const cutoff=new Date(Date.now()-48*60*60*1000);const normalize=s=>s.toLowerCase().replace(/[^a-z\\u00c0-\\u024f0-9 ]/g,'').split(/\\s+/).filter(w=>w.length>4);const stop=[\"about\", \"after\", \"would\", \"could\", \"should\", \"their\", \"there\", \"these\", \"those\", \"which\", \"where\", \"being\", \"other\", \"under\", \"still\", \"first\", \"against\", \"before\", \"during\", \"between\", \"years\", \"today\", \"says\", \"claim\", \"plans\", \"seeks\", \"wants\", \"finds\", \"takes\", \"needs\", \"report\", \"warns\", \"close\", \"early\", \"every\", \"given\", \"might\", \"shall\", \"since\", \"three\", \"until\", \"watch\", \"whole\", \"known\", \"place\", \"start\", \"among\", \"based\", \"build\", \"allow\", \"leave\", \"learn\", \"large\", \"later\", \"least\", \"long\", \"many\", \"more\", \"much\", \"news\", \"over\", \"past\", \"same\", \"soon\", \"such\", \"than\", \"then\", \"they\", \"this\", \"time\", \"upon\", \"very\", \"well\", \"were\", \"when\", \"will\", \"with\", \"year\", \"from\", \"have\", \"also\", \"been\", \"came\", \"does\", \"done\", \"even\", \"ever\", \"gets\", \"goes\", \"goes\", \"gone\", \"good\", \"great\", \"hear\", \"held\", \"help\", \"here\", \"high\", \"into\", \"just\", \"keep\", \"kind\", \"last\", \"left\", \"less\", \"like\", \"live\", \"look\", \"lost\", \"love\", \"made\", \"make\", \"mean\", \"meet\", \"move\", \"near\", \"next\", \"open\", \"only\", \"some\", \"stay\", \"stop\", \"take\", \"tell\", \"turn\", \"want\", \"ways\", \"went\", \"whom\"];const highSignal=/break(?:ing)?|urgent|crisis|attack(?:s|ed)?|kill(?:s|ed)?|\\bdead\\b|war|strike|explosion|earthquake|hurricane|disaster|election|summit|sanction|shoot(?:s|ing)?|coup|protest|flood|wildfire|tsunami/i;const topSources=[\"bbc.co.uk\", \"nytimes.com\", \"theguardian.com\", \"aljazeera.com\", \"reuters.com\"];const recent=items.filter(i=>{const d=i.json.pubDate||i.json.published||i.json.isoDate;return !d||new Date(d)>=cutoff;});const pool=recent.length>0?recent:items;const ks={};for(const item of pool){const src=item.json.source||item.json.link||'';for(const w of normalize(_d(item.json.title)||'')){if(stop.includes(w))continue;if(!ks[w])ks[w]=new Set();ks[w].add(src);}}const trending=new Set(Object.keys(ks).filter(k=>ks[k].size>=2));const seen=new Set();const trendHits=pool.filter(i=>{const t=_d(i.json.title)||'';const words=normalize(t);const hit=words.some(w=>trending.has(w));if(hit&&!seen.has(t)){seen.add(t);return true;}return false;});const bypass=pool.filter(i=>{const t=_d(i.json.title)||'';if(seen.has(t))return false;const src=i.json.link||'';const isTop=topSources.some(s=>src.includes(s));const isSignal=highSignal.test(t);if(isTop&&isSignal){seen.add(t);return true;}return false;});let r=[...trendHits,...bypass].map(i=>({json:{type:'world',title:_d(i.json.title),link:i.json.link}})  );if(r.length===0)r=pool.slice(0,3).map(i=>({json:{type:'world',title:_d(i.json.title),link:i.json.link}})  );return r;"
+      },
+      "name": "Filter World Trending",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        1300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const _d=s=>s?s.replace(/&amp;/g,String.fromCharCode(38)).replace(/&lt;/g,String.fromCharCode(60)).replace(/&gt;/g,String.fromCharCode(62)).replace(/&#(\\d+);/g,(m,c)=>String.fromCharCode(c)).replace(/&quot;/g,String.fromCharCode(34)).replace(/&apos;/g,String.fromCharCode(39)).replace(/&#x([0-9a-f]+);/gi,(m,c)=>String.fromCharCode(parseInt(c,16))):s;\nconst r=items.slice(0,15).map(i=>({json:{type:'hackernews',title:_d(i.json.title),link:i.json.link}}));\nreturn r;"
+      },
+      "name": "Filter HN",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        500,
+        1500
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const _d=s=>s?s.replace(/&amp;/g,String.fromCharCode(38)).replace(/&lt;/g,String.fromCharCode(60)).replace(/&gt;/g,String.fromCharCode(62)).replace(/&#(\\d+);/g,(m,c)=>String.fromCharCode(c)).replace(/&quot;/g,String.fromCharCode(34)).replace(/&apos;/g,String.fromCharCode(39)).replace(/&#x([0-9a-f]+);/gi,(m,c)=>String.fromCharCode(parseInt(c,16))):s;const cutoff=new Date(Date.now()-48*60*60*1000);const normalize=s=>s.toLowerCase().replace(/[^a-z\\u00c0-\\u024f0-9 ]/g,'').split(/\\s+/).filter(w=>w.length>4);const stop=[\"sobre\", \"depois\", \"ainda\", \"seria\", \"podem\", \"entre\", \"antes\", \"durante\", \"porque\", \"quando\", \"entao\", \"mesmo\", \"muito\", \"tambem\", \"outros\", \"desde\", \"governo\", \"disse\", \"segundo\", \"contra\", \"desta\", \"deste\", \"todos\", \"todas\", \"primeiro\", \"grande\", \"maior\", \"parte\", \"pelas\", \"pelos\", \"tendo\", \"acordo\", \"brasil\", \"sendo\", \"dados\", \"dever\", \"fazer\", \"estar\", \"poder\", \"foram\", \"nivel\", \"segue\", \"afirma\", \"aponta\", \"revela\", \"indica\", \"destaca\", \"confirma\", \"anuncia\", \"declar\", \"relata\", \"mostra\"];const highSignal=/urgente|exclusivo|morte|ataque|acidente|terremoto|eleicao|crise|guerra|greve|explosao|inundacao|tragedia|assassin|tirotei|sequestro|desaparecido/i;const topSources=[\"folha.uol.com.br\", \"g1.globo.com\", \"publico.pt\", \"observador.pt\"];const recent=items.filter(i=>{const d=i.json.pubDate||i.json.published||i.json.isoDate;return !d||new Date(d)>=cutoff;});const pool=recent.length>0?recent:items;const ks={};for(const item of pool){const src=item.json.source||item.json.link||'';for(const w of normalize(_d(item.json.title)||'')){if(stop.includes(w))continue;if(!ks[w])ks[w]=new Set();ks[w].add(src);}}const trending=new Set(Object.keys(ks).filter(k=>ks[k].size>=2));const seen=new Set();const trendHits=pool.filter(i=>{const t=_d(i.json.title)||'';const words=normalize(t);const hit=words.some(w=>trending.has(w));if(hit&&!seen.has(t)){seen.add(t);return true;}return false;});const bypass=pool.filter(i=>{const t=_d(i.json.title)||'';if(seen.has(t))return false;const src=i.json.link||'';const isTop=topSources.some(s=>src.includes(s));const isSignal=highSignal.test(t);if(isTop&&isSignal){seen.add(t);return true;}return false;});const _ptSrc=new Set(['renascenca','publico','sapo','observador']);const _mkBrpt=i=>{const src=i.json.source||'';return {json:{type:'brpt',title:_d(i.json.title),link:i.json.link,source:src,country:_ptSrc.has(src)?'pt':'br'}};};let r=[...trendHits,...bypass].map(_mkBrpt);if(r.length===0)r=pool.slice(0,3).map(_mkBrpt);return r;"
+      },
+      "name": "Filter BR PT Trending",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        1700
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const _d=s=>s?s.replace(/&amp;/g,String.fromCharCode(38)).replace(/&lt;/g,String.fromCharCode(60)).replace(/&gt;/g,String.fromCharCode(62)).replace(/&#(\\d+);/g,(m,c)=>String.fromCharCode(c)).replace(/&quot;/g,String.fromCharCode(34)).replace(/&apos;/g,String.fromCharCode(39)).replace(/&#x([0-9a-f]+);/gi,(m,c)=>String.fromCharCode(parseInt(c,16))):s;\nconst cutoff=new Date(Date.now()-24*60*60*1000);\nconst r=items.filter(i=>new Date(i.json.pubDate||i.json.published||i.json.isoDate||0)>=cutoff)\n  .map(i=>({json:{type:'youtube',title:`[${_d(i.json.author)||'YT'}] ${_d(i.json.title)}`,link:i.json.link}}));\nreturn r;"
+      },
+      "name": "Filter YouTube Recent",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        700,
+        1900
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 1",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        900,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 2",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        950,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 3",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 4",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 5",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 6",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        1150,
+        350
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 7",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge 8",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nlet defaultChatId = '';\ntry {\n  defaultChatId = $env.TELEGRAM_CHAT_ID || $env.N8N_TELEGRAM_CHAT_ID || '';\n} catch(e) {\n  console.log('⚠️ Could not read env vars: ' + e.message);\n}\n\nconsole.log(`🔑 TELEGRAM_CHAT_ID: ${defaultChatId ? 'found (' + defaultChatId + ')' : 'NOT FOUND — add TELEGRAM_CHAT_ID to your docker-compose environment'}`);\n\nlet category = 'all', chatId = defaultChatId, extended = false, processingMsgId = '';\ntry {\n  const r = $('Capture Msg ID').first()?.json || $('Route to Fetchers').first()?.json;\n  if (r) {\n    category = r.category || 'all';\n    chatId = r.chatId || defaultChatId;\n    extended = r.extended || false;\n    processingMsgId = r.processingMsgId || '';\n  }\n} catch(e) {\n  // Cron path: these nodes didn't run, use defaults\n}\n\nif (!chatId) {\n  console.log('❌ chatId is empty! For cron triggers, TELEGRAM_CHAT_ID env var is required.');\n}\n\nreturn items.map(i => ({\n  json: {\n    ...i.json,\n    _requestedCategory: category,\n    _chatId: chatId,\n    _extended: extended,\n    _processingMsgId: processingMsgId\n  }\n}));"
+      },
+      "name": "Tag Category",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const defaultChatId = '';\nconst _d=s=>s?s.replace(/&amp;/g,String.fromCharCode(38)).replace(/&lt;/g,String.fromCharCode(60)).replace(/&gt;/g,String.fromCharCode(62)).replace(/&#(\\d+);/g,(m,c)=>String.fromCharCode(c)).replace(/&quot;/g,String.fromCharCode(34)).replace(/&apos;/g,String.fromCharCode(39)).replace(/&#x([0-9a-f]+);/gi,(m,c)=>String.fromCharCode(parseInt(c,16))):s;\nconst _esc=s=>s?s.replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):s;\nconst _dom=l=>{try{const h=new URL(l).hostname.replace(/^www\\./,'');const p=h.split('.');return p.length>=2?p.slice(-2).join('.'):h;}catch(e){return null;}};\nconst _join=d=>{if(d.length===1)return d[0];if(d.length===2)return d[0]+' and '+d[1];return d.slice(0,-1).join(', ')+', and '+d[d.length-1];};\nconst _svcLines=(svcItems,html)=>{\n  const map=new Map(),nonMatch=[];\n  for(const i of svcItems){\n    const m=_d(i.json.title||'').match(/^(.+?)\\s+on\\s+(\\d{4}-\\d{2}-\\d{2})/);\n    if(m){const loc=m[1].trim(),date=m[2];if(!map.has(loc))map.set(loc,[]);map.get(loc).push({date,link:i.json.link,source:i.json.source||_dom(i.json.link)});}\n    else nonMatch.push(i);\n  }\n  const tgt=html?' target=\"_blank\"':'';\n  const lines=[];\n  for(const[loc,entries]of map){\n    entries.sort((a,b)=>b.date.localeCompare(a.date));\n    const src=entries[0]?.source?` <i>(${entries[0].source})</i>`:'';\n    const dl=entries.map(e=>`<a${tgt} href=\"${_esc(e.link)}\">${e.date}</a>`);\n    lines.push(`• ${html?_esc(loc):loc}${src} on ${_join(dl)}`);\n  }\n  for(const i of nonMatch){\n    const src=i.json.source||_dom(i.json.link);\n    const srcTxt=src?` <i>(${src})</i>`:'';\n    lines.push(`• <a${tgt} href=\"${_esc(i.json.link)}\">${html?_esc(_d(i.json.title)):_d(i.json.title)}</a>${srcTxt}`);\n  }\n  return lines;\n};\n\nconst sections = {\n  cve:{emoji:'🛡️',title:'CVE Alerts',limit:0},\n  security_news:{emoji:'🔐',title:'Security News',limit:0},\n  service:{emoji:'⚠️',title:'Service Disruptions',limit:0},\n  retrogaming:{emoji:'🎮',title:'Retrogaming/Modding',limit:5},\n  scitech:{emoji:'🔬',title:'Science & Tech',limit:5},\n  world:{emoji:'🌍',title:'World News',limit:5},\n  hackernews:{emoji:'🟠',title:'Hacker News',limit:5},\n  brpt:{emoji:'🇧🇷🇵🇹',title:'Brazil & Portugal',limit:6,balanced:true},\n  youtube:{emoji:'📺',title:'YouTube',limit:0}\n};\n\nconst reqCat=items[0]?.json?._requestedCategory||'all';\nconst chatId=items[0]?.json?._chatId||defaultChatId;\nconst extended=items[0]?.json?._extended||false;\nconst processingMsgId=items[0]?.json?._processingMsgId||'';\nconst dateStr=new Date().toLocaleDateString('en-GB',{weekday:'short',month:'short',day:'numeric'});\n\nconst sectionData=[],emptyCategories=[];\nfor(const [key,sec] of Object.entries(sections)){\n  if(reqCat!=='all'&&reqCat!==key)continue;\n  const group=items.filter(i=>i.json.type===key);\n  if(!group.length){emptyCategories.push(`  - ${sec.emoji} ${sec.title}`);continue;}\n  const maxItems=(!extended&&sec.limit>0)?sec.limit:group.length;\n  let shown;\n  if(!extended && sec.balanced){\n    const br=group.filter(i=>i.json.country==='br').slice(0,3);\n    const pt=group.filter(i=>i.json.country==='pt').slice(0,3);\n    shown=[...br,...pt];\n    if(shown.length===0)shown=group.slice(0,maxItems);\n  } else {\n    shown=group.slice(0,maxItems);\n  }\n  const remaining=group.length-shown.length;\n  const cmd=key==='hackernews'?'hn':key;\n  sectionData.push({key,emoji:sec.emoji,title:sec.title,items:shown,remaining,cmd,total:group.length});\n}\n\nconst aiBriefing=items[0]?.json?._aiBriefing||null;const storyOfDay=items[0]?.json?._storyOfTheDay||null;const textLines=[];if(storyOfDay)textLines.push(storyOfDay,'');if(aiBriefing)textLines.push(aiBriefing,'─────────────────','');textLines.push(`📰 News Clipper — ${dateStr}`,'');\nfor(const s of sectionData){\n  textLines.push(`${s.emoji} ${s.title}`);\n  if(s.key==='service'){\n    textLines.push(..._svcLines(s.items,false));\n  } else if(s.key==='brpt'){\n    const _brItems=s.items.filter(i=>i.json.country!=='pt');\n    const _ptItems=s.items.filter(i=>i.json.country==='pt');\n    const _tSubs=_brItems.length<=_ptItems.length?[{items:_brItems,hdr:'  🇧🇷 Brasil'},{items:_ptItems,hdr:'  🇵🇹 Portugal'}]:[{items:_ptItems,hdr:'  🇵🇹 Portugal'},{items:_brItems,hdr:'  🇧🇷 Brasil'}];\n    for(const sub of _tSubs){if(!sub.items.length)continue;textLines.push(sub.hdr);for(const i of sub.items){const _da=(i.json.duplicates||[]).map(d=>`<a href=\"${_esc(d.link)}\">${d.source||'src'}</a>`).join(', ');const _also=_da?` [${_da}]`:'';textLines.push(`• <a href=\"${_esc(i.json.link)}\">${_d(i.json.title)}</a>${_also}`);}}\n  } else {\n    for(const i of s.items){\n      const score=i.json.score?` [${i.json.score}]`:'';\n      const flag=i.json.country==='br'?'🇧🇷 ':i.json.country==='pt'?'🇵🇹 ':'';\n      textLines.push(`• ${flag}<a href=\"${_esc(i.json.link)}\">${_d(i.json.title)}${score}</a>`);\n    }\n  }\n  if(s.remaining>0)textLines.push(`  ⤷ +${s.remaining} more → /${s.cmd} extended`);\n  textLines.push('');\n}\nif(emptyCategories.length){textLines.push('📭 No updates today:');textLines.push(...emptyCategories);}\nconst textMsg=textLines.join('\\n');\n\nif(textMsg.length<=4000){\n  return[{json:{mode:'text',text:textMsg,chatId,processingMsgId}}];\n}\n\n// HTML file mode\nconst allSections=[],allEmpty=[];\nfor(const[key,sec]of Object.entries(sections)){\n  if(reqCat!=='all'&&reqCat!==key)continue;\n  const group=items.filter(i=>i.json.type===key);\n  if(!group.length){allEmpty.push(`  - ${sec.emoji} ${sec.title}`);continue;}\n  allSections.push({key,emoji:sec.emoji,title:sec.title,items:group});\n}\n\nallSections.sort((a,b)=>a.items.length-b.items.length);\nlet sh='';\nfor(const s of allSections){\n  let _sHtml='';\n  if(s.key==='service'){\n    let li='';for(const line of _svcLines(s.items,true))li+=`<li>${line}</li>`;\n    _sHtml=`<div class=\"section\"><h2>${s.emoji} ${s.title} <span class=\"count\">(${s.items.length})</span></h2><ul>${li}</ul></div>\\n`;\n  } else if(s.key==='brpt'){\n    const _brI=s.items.filter(i=>i.json.country!=='pt'),_ptI=s.items.filter(i=>i.json.country==='pt');\n    const _subs=_brI.length<=_ptI.length?[{items:_brI,flag:'🇧🇷',label:'Brasil'},{items:_ptI,flag:'🇵🇹',label:'Portugal'}]:[{items:_ptI,flag:'🇵🇹',label:'Portugal'},{items:_brI,flag:'🇧🇷',label:'Brasil'}];\n    let inner='';\n    for(const sub of _subs){if(!sub.items.length)continue;inner+=`<h3 class=\"subsec\">${sub.flag} ${sub.label} <span class=\"count\">(${sub.items.length})</span></h3><ul>`;for(const i of sub.items){const t=_esc(_d(i.json.title));const dupes=i.json.duplicates||[];const pills=dupes.length>0?`<span class=\"srcs\">${dupes.map(d=>`<a href=\"${_esc(d.link)}\" target=\"_blank\">${_esc(d.source||'src')}</a>`).join('')}</span>`:'';inner+=`<li><a href=\"${_esc(i.json.link)}\" target=\"_blank\">${t}</a>${pills}</li>`;}inner+='</ul>';}\n    _sHtml=`<div class=\"section\"><h2>${s.emoji} ${s.title} <span class=\"count\">(${s.items.length})</span></h2>${inner}</div>\\n`;\n  } else {\n    let li='';for(const i of s.items){const t=_esc(_d(i.json.title));const sc=i.json.score?`<span class=\"score\">[CVSS: ${i.json.score}]</span>`:'';li+=`<li><a href=\"${_esc(i.json.link)}\" target=\"_blank\">${t}</a> ${sc}</li>`;}\n    _sHtml=`<div class=\"section\"><h2>${s.emoji} ${s.title} <span class=\"count\">(${s.items.length})</span></h2><ul>${li}</ul></div>\\n`;\n  }\n  sh+=_sHtml;\n}\nif(allEmpty.length){let eli='';for(const c of allEmpty)eli+=`<li>${c.trim().replace(/^- /,'')}</li>`;sh+=`<div class=\"section empty\"><h2>📭 No updates today</h2><ul>${eli}</ul></div>`;}\n\nconst totalItems=allSections.reduce((a,s)=>a+s.items.length,0);\nconst html=`<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\"><title>News Clipper — ${dateStr}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d1117;color:#c9d1d9;padding:20px;max-width:800px;margin:0 auto}h1{color:#58a6ff;font-size:1.4em;padding-bottom:12px;border-bottom:1px solid #21262d;margin-bottom:20px}.meta{color:#8b949e;font-size:.85em;margin-bottom:20px}.section{margin-bottom:24px}.section h2{color:#f0f6fc;font-size:1.1em;margin-bottom:8px;padding:8px 12px;background:#161b22;border-radius:6px;border-left:3px solid #58a6ff}.section h2 .count{color:#8b949e;font-weight:normal;font-size:.85em}.section ul{list-style:none;padding-left:0}.section ul li{padding:6px 12px;border-bottom:1px solid #21262d;font-size:.95em;line-height:1.4}.section ul li:last-child{border-bottom:none}.section ul li a{color:#58a6ff;text-decoration:none}.section ul li a:hover{text-decoration:underline}.score{color:#f85149;font-weight:bold;font-size:.85em;margin-left:4px}.empty h2{border-left-color:#484f58}.empty li{color:#8b949e}.section h3.subsec{color:#c9d1d9;font-size:.9em;padding:6px 12px 4px;background:#0d1117;margin:10px 0 0;border-left:2px solid #30363d;font-weight:600}.srcs{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle}.srcs a{font-size:.75em;padding:1px 6px;background:#21262d;border-radius:10px;color:#8b949e;text-decoration:none}.srcs a:hover{color:#58a6ff;background:#30363d}footer{margin-top:30px;padding-top:12px;border-top:1px solid #21262d;color:#484f58;font-size:.8em;text-align:center}</style></head><body><h1>📰 Daily News Clipper</h1><div class=\"meta\">${dateStr} — Full Digest — ${totalItems} items</div>${sh}<footer>Generated by n8n News Clipper Bot</footer></body></html>`;\n\nconst binaryData=Buffer.from(html,'utf-8');\nconst fileName=`news-clipper-${new Date().toISOString().slice(0,10)}.html`;\nconst summaryParts=allSections.map(s=>`${s.emoji} ${s.title}: ${s.items.length}`);\nconst emptyLine=allEmpty.length?'\\n\\n📭 No updates today:\\n'+allEmpty.join('\\n'):'';\nconst summary=`📰 News Clipper — ${dateStr}\\n\\n`+summaryParts.join('\\n')+emptyLine+`\\n\\n📎 Full digest attached as HTML (${totalItems} items)\\n💡 Sent as file because the digest exceeds Telegram's message limit.`;\n\nreturn[{json:{mode:'file',chatId,processingMsgId,summary,fileName},binary:{data:{data:binaryData.toString('base64'),mimeType:'text/html',fileName}}}];"
+      },
+      "name": "Condense Digest",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json[\"chatId\"]}}",
+        "messageId": "={{$json[\"processingMsgId\"]}}",
+        "text": "={{$json[\"text\"]}}",
+        "operation": "editMessageText",
+        "additionalFields": {
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "name": "Edit Text Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        2250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json[\"chatId\"]}}",
+        "messageId": "={{$json[\"processingMsgId\"]}}",
+        "operation": "deleteMessage"
+      },
+      "name": "Delete Processing Msg",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        2250,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst orig = $('Is AI?').first().json;\nconst msgId = $('Send AI Thinking').first().json.result?.message_id || '';\nconst command = orig.command || 'explain';\nlet query = orig.query || 'No input provided';\nconst chatId = orig.chatId;\nlet respondAsAudio = orig.respondAsAudio || false;\n\n// ===== VOICE TRANSCRIPTION =====\nconst _fileId = orig.fileId || '';\nconst _mediaType = orig.mediaType || '';\nif (_mediaType === 'voice' && _fileId) {\n  const _gKey = $env.GEMINI_API_KEY ?? $env.N8N_GEMINI_API_KEY ?? '';\n  const _tToken = $env.N8N_TELEGRAM_BOT_TOKEN ?? $env.TELEGRAM_BOT_TOKEN ?? '';\n  const _groqKey = $env.N8N_GROQ_API_KEY ?? $env.GROQ_API_KEY ?? '';\n  let _transcribed = false;\n  let _errors = [];\n  const _he = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');\n\n  if (!_tToken) {\n    _errors.push('TELEGRAM_BOT_TOKEN not configured');\n  } else if (!_gKey && !_groqKey) {\n    _errors.push('No transcription provider — add N8N_GEMINI_API_KEY or N8N_GROQ_API_KEY');\n  } else {\n    // Step 1: get Telegram file path\n    let _filePath = null;\n    try {\n      const _fi = await this.helpers.httpRequest({\n        method: 'GET',\n        url: `https://api.telegram.org/bot${_tToken}/getFile?file_id=${_fileId}`,\n        json: true,\n      });\n      _filePath = _fi.result?.file_path;\n      if (!_filePath) throw new Error('Telegram getFile returned no file_path');\n    } catch (_e) {\n      _errors.push(`getFile: ${_e.message?.substring(0, 150)}`);\n    }\n\n    if (_filePath) {\n      const _tgUrl = `https://api.telegram.org/file/bot${_tToken}/${_filePath}`;\n\n      // Step 2: download binary once — reused by both providers\n      let _audioBuf = null;\n      try {\n        const _raw = await this.helpers.httpRequest({\n          method: 'GET', url: _tgUrl, encoding: 'arraybuffer',\n        });\n        _audioBuf = Buffer.isBuffer(_raw) ? _raw : Buffer.from(_raw);\n        console.log(`Audio: ${_audioBuf.length}B magic:${_audioBuf.slice(0,4).toString('hex')}`);\n      } catch (_e) {\n        _errors.push(`Download: ${_e.message?.substring(0, 150)}`);\n      }\n\n      if (_audioBuf) {\n        // Gemini multi-model fallback (each model has separate rate limits: 15 RPM / 1500 RPD)\n        // Then Groq Whisper as last resort\n        if (_gKey && !_transcribed) {\n          const _b64 = _audioBuf.toString('base64');\n          const _models = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.0-flash-lite'];\n          for (const _model of _models) {\n            if (_transcribed) break;\n            try {\n              const _tr = await this.helpers.httpRequest({\n                method: 'POST',\n                url: `https://generativelanguage.googleapis.com/v1beta/models/${_model}:generateContent?key=${_gKey}`,\n                body: { contents: [{ role: 'user', parts: [\n                  { inline_data: { mime_type: 'audio/ogg', data: _b64 } },\n                  { text: 'Transcribe exactly what is said in this audio. Return only the transcription, nothing else.' }\n                ]}] },\n                json: true, timeout: 30000,\n              });\n              const _t = _tr.candidates?.[0]?.content?.parts?.[0]?.text?.trim();\n              if (_t) { query = _t; _transcribed = true; console.log(`${_model} transcribed: \"${_t}\"`); }\n              else _errors.push(`${_model}: empty response`);\n            } catch (_e) { _errors.push(`${_model}: ${(_e.message || String(_e)).substring(0, 80)}`); }\n          }\n        }\n\n        // Last resort: Groq Whisper (manual multipart — n8n httpRequest formData is broken)\n        if (_groqKey && !_transcribed && _audioBuf) {\n          try {\n            const _bd = 'n8n' + Date.now().toString(36);\n            const _mp = Buffer.concat([\n              Buffer.from('--' + _bd + '\\r\\nContent-Disposition: form-data; name=\"model\"\\r\\n\\r\\nwhisper-large-v3-turbo\\r\\n'),\n              Buffer.from('--' + _bd + '\\r\\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.ogg\"\\r\\nContent-Type: audio/ogg\\r\\n\\r\\n'),\n              _audioBuf,\n              Buffer.from('\\r\\n--' + _bd + '--\\r\\n'),\n            ]);\n            const _gr = await this.helpers.httpRequest({\n              method: 'POST',\n              url: 'https://api.groq.com/openai/v1/audio/transcriptions',\n              headers: { Authorization: `Bearer ${_groqKey}`, 'Content-Type': 'multipart/form-data; boundary=' + _bd },\n              body: _mp,\n              ignoreHttpStatusErrors: true,\n            });\n            const _grd = typeof _gr === 'string' ? JSON.parse(_gr) : _gr;\n            if (_grd?.error) throw new Error(_grd.error.message || JSON.stringify(_grd.error));\n            const _t = _grd?.text?.trim();\n            if (_t) { query = _t; _transcribed = true; console.log(`Groq transcribed: \"${_t}\"`); }\n            else _errors.push(`Groq(${_audioBuf.length}B): ${JSON.stringify(_grd).substring(0, 100)}`);\n          } catch (_e) { _errors.push(`Groq: ${(_e?.message || String(_e)).substring(0, 120)}`); }\n        }\n      }\n    }\n  }\n\n  // Voice input → voice output\n    respondAsAudio = true;\n\n    if (!_transcribed) {\n    const _errText = `❌ <b>Could not transcribe your voice message.</b>\\n\\n<i>${_he(_errors.join(' | '))}</i>\\n\\nPlease type your question as text instead.`;\n    return [{ json: { chatId, msgId, respondAsAudio: false, text: _errText, plainText: '' } }];\n  }\n}\nlet systemPrompt = '';\nif (command === 'search') {\n  systemPrompt = 'You are a helpful search assistant. Provide concise, well-structured search results with key facts and sources. Use bullet points for clarity. Keep under 3000 characters. Always respond in the same language as the query.';\n} else if (command === 'eli5') {\n  systemPrompt = 'You explain things to a 5-year-old child. Use very simple words, fun analogies, and short sentences. Be playful and engaging. Keep under 2000 characters. Always respond in the same language as the query.';\n} else {\n  systemPrompt = 'You are a knowledgeable assistant. Provide a clear, concise explanation. Use structure and examples where helpful. Keep under 3000 characters. Always respond in the same language as the query.';\n}\n\nconst userMessage = command === 'search' ? query :\n                    command === 'eli5' ? `Explain like I'm 5 years old: ${query}` :\n                    `Explain: ${query}`;\n\n// ===== TRY GEMINI FIRST =====\nlet content = '';\nlet sources = [];\nlet provider = 'gemini';\n\nconst geminiKey = $env.GEMINI_API_KEY ?? $env.N8N_GEMINI_API_KEY ?? '';\nconst nvidiaKey = $env.NVIDIA_API_KEY ?? $env.N8N_NVIDIA_API_KEY ?? '';\nconst githubGpt5Key = $env.N8N_GITHUB_GPT5_KEY ?? '';\nconst cerebrasKey = $env.N8N_CEREBRAS_API_KEY ?? $env.CEREBRAS_API_KEY ?? '';\nconst mistralKey = $env.N8N_MISTRAL_API_KEY ?? $env.MISTRAL_API_KEY ?? '';\n\nconsole.log(`🔑 Gemini key: ${geminiKey ? 'found (' + geminiKey.substring(0,8) + '...)' : 'NOT FOUND'}`);\nconsole.log(`🔑 NVIDIA key: ${nvidiaKey ? 'found (' + nvidiaKey.substring(0,8) + '...)' : 'NOT FOUND'}`);\nconsole.log(`🔑 GPT-5 (GitHub) key: ${githubGpt5Key ? 'found (' + githubGpt5Key.substring(0,12) + '...)' : 'NOT FOUND'}`);\n\nif (geminiKey) {\n  try {\n    const geminiBody = {\n      contents: [{ role: 'user', parts: [{ text: userMessage }] }],\n      systemInstruction: { parts: [{ text: systemPrompt }] },\n      generationConfig: { maxOutputTokens: 1024, temperature: 0.7 }\n    };\n    if (command === 'search') {\n      geminiBody.tools = [{ googleSearchRetrieval: {} }];\n    }\n\n    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`;\n\n    const resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: geminiUrl,\n      body: geminiBody,\n      json: true,\n      timeout: 30000,\n    });\n\n    const candidates = resp.candidates || [];\n    if (candidates.length > 0) {\n      const parts = candidates[0]?.content?.parts || [];\n      content = parts.map(p => p.text).filter(Boolean).join('\\n');\n      \n      const grounding = candidates[0]?.groundingMetadata;\n      sources = grounding?.groundingChunks?.map(c => c.web?.uri).filter(Boolean) || [];\n    }\n\n    if (!content) throw new Error('Empty Gemini response');\n    console.log(`✅ Gemini responded (${content.length} chars)`);\n  } catch (geminiErr) {\n    console.log(`⚠️ Gemini failed: ${geminiErr.message?.substring(0, 150)}`);\n    content = '';\n  }\n}\n\n\n// ===== FALLBACK TO GPT-5 (GITHUB MODELS) =====\nif (!content && githubGpt5Key) {\n  try {\n    provider = 'gpt5';\n    const gpt5Body = {\n      model: 'gpt-4.5-preview', // Verify model name at github.com/marketplace/models\n      messages: [\n        { role: 'system', content: systemPrompt },\n        { role: 'user', content: userMessage }\n      ],\n      max_tokens: 1024,\n      temperature: 0.7\n    };\n\n    const resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://models.inference.ai.azure.com/chat/completions',\n      headers: { 'Authorization': `Bearer ${githubGpt5Key}` },\n      body: gpt5Body,\n      json: true,\n      timeout: 30000,\n    });\n\n    content = resp.choices?.[0]?.message?.content || '';\n    if (!content) throw new Error('Empty GPT-5 response');\n    console.log(`✅ GPT-5 (GitHub) responded (${content.length} chars)`);\n  } catch (gpt5Err) {\n    console.log(`⚠️ GPT-5 (GitHub) failed: ${gpt5Err.message?.substring(0, 150)}`);\n    content = '';\n  }\n}\n// ===== FALLBACK TO NVIDIA =====\nif (!content && nvidiaKey) {\n  try {\n    provider = 'nvidia';\n    const nvidiaBody = {\n      model: 'meta/llama-3.3-70b-instruct',\n      messages: [\n        { role: 'system', content: systemPrompt },\n        { role: 'user', content: userMessage }\n      ],\n      max_tokens: 1024,\n      temperature: 0.7\n    };\n\n    const resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://integrate.api.nvidia.com/v1/chat/completions',\n      headers: { 'Authorization': `Bearer ${nvidiaKey}` },\n      body: nvidiaBody,\n      json: true,\n      timeout: 30000,\n    });\n\n    content = resp.choices?.[0]?.message?.content || '';\n    if (!content) throw new Error('Empty NVIDIA response');\n    console.log(`✅ NVIDIA responded (${content.length} chars)`);\n  } catch (nvidiaErr) {\n    console.log(`❌ NVIDIA also failed: ${nvidiaErr.message?.substring(0, 150)}`);\n    // Try Cerebras as 3rd fallback\n    try {\n      if (cerebrasKey) {\n        provider = 'cerebras';\n        const resp = await this.helpers.httpRequest({\n          method: 'POST',\n          url: 'https://api.cerebras.ai/v1/chat/completions',\n          headers: { Authorization: `Bearer ${cerebrasKey}` },\n          body: {\n            model: 'llama-3.3-70b',\n            messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }],\n            max_tokens: 1024, temperature: 0.7\n          },\n          json: true, timeout: 30000,\n        });\n        content = resp.choices?.[0]?.message?.content || '';\n        if (!content) throw new Error('Empty Cerebras response');\n        console.log(`✅ Cerebras responded (${content.length} chars)`);\n      } else {\n        content = 'Sorry, all AI providers are currently unavailable. Please try again later.';\n        provider = 'none';\n      }\n    } catch (cerebrasErr) {\n      console.log(`❌ Cerebras also failed: ${cerebrasErr.message?.substring(0, 150)}`);\n      content = 'Sorry, all AI providers are currently unavailable. Please try again later.';\n      provider = 'none';\n    }\n  }\n}\n\nif (!content && mistralKey) {\n  try {\n    provider = 'mistral';\n    const resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://api.mistral.ai/v1/chat/completions',\n      headers: { Authorization: `Bearer ${mistralKey}` },\n      body: {\n        model: 'mistral-small-latest',\n        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }],\n        max_tokens: 1024, temperature: 0.7\n      },\n      json: true, timeout: 30000,\n    });\n    content = resp.choices?.[0]?.message?.content || '';\n    if (!content) throw new Error('Empty Mistral response');\n    console.log(`✅ Mistral responded (${content.length} chars)`);\n  } catch (mistralErr) {\n    console.log(`❌ Mistral failed: ${mistralErr.message?.substring(0, 150)}`);\n    content = 'Sorry, all AI providers are currently unavailable. Please try again later.';\n    provider = 'none';\n  }\n}\n\nif (!content) {\n  content = 'No AI provider configured. Set GEMINI_API_KEY, NVIDIA_API_KEY, N8N_CEREBRAS_API_KEY and/or N8N_MISTRAL_API_KEY environment variables.';\n  provider = 'none';\n}\n\n// ===== FORMAT RESPONSE =====\nconst emoji = command === 'search' ? '🔍' : command === 'eli5' ? '🧒' : '💡';\nconst title = command === 'search' ? 'Search Results' : command === 'eli5' ? 'ELI5' : 'Explanation';\n\nlet text = `${emoji} <b>${title}</b>\\n\\n${content}`;\n\nif (sources.length > 0) {\n  text += '\\n\\n📚 Sources:\\n';\n  const unique = [...new Set(sources)];\n  unique.slice(0, 5).forEach((url, i) => {\n    try { const u = new URL(url); text += `${i+1}. ${u.hostname} — ${url}\\n`; } catch(e) { text += `${i+1}. ${url}\\n`; }\n  });\n}\n\nif (provider === 'gpt5') {\n  text += '\\n\\n<i>🤖 Powered by GPT-5 via GitHub (Gemini unavailable)</i>';\n}\nif (provider === 'nvidia') {\n  text += '\\n\\n<i>⚡ Powered by NVIDIA (Gemini unavailable)</i>';\n}\n\nif (text.length > 4000) text = text.substring(0, 3950) + '\\n\\n… (truncated)';\n\nreturn [{ json: { chatId, msgId, respondAsAudio, text, plainText: content } }];"
+      },
+      "name": "Call AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        2500
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json[\"chatId\"]}}",
+        "text": "={{$json[\"text\"]}}",
+        "additionalFields": {
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "name": "Send New Text",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        2250,
+        550
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"processingMsgId\"]}}",
+              "value2": ""
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "name": "Has Msg ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"mode\"]}}",
+              "value2": "text"
+            }
+          ]
+        }
+      },
+      "name": "Is Text Cmd?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"mode\"]}}",
+              "value2": "text"
+            }
+          ]
+        }
+      },
+      "name": "Is Text Cron?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const url = item.json.url;\n  const source = item.json.source || '';\n  \n  try {\n    // Fetch raw response as arraybuffer to handle encoding properly\n    const response = await this.helpers.httpRequest({\n      method: 'GET',\n      url: url,\n      encoding: 'arraybuffer',\n      timeout: 15000,\n      headers: {\n        'User-Agent': 'Mozilla/5.0 (compatible; n8n RSS Reader)',\n        'Accept': 'application/rss+xml, application/xml, text/xml, */*',\n      },\n    });\n    \n    // Convert buffer to string, trying to detect encoding\n    let xmlStr;\n    if (response instanceof Buffer || response?.type === 'Buffer') {\n      const buf = Buffer.isBuffer(response) ? response : Buffer.from(response.data || response);\n      \n      // Check XML declaration for encoding\n      const head = buf.slice(0, 200).toString('ascii');\n      const encMatch = head.match(/encoding=[\"']([^\"']+)[\"']/i);\n      const declaredEnc = encMatch ? encMatch[1].toLowerCase() : 'utf-8';\n      \n      if (declaredEnc.includes('iso-8859') || declaredEnc.includes('latin') || declaredEnc.includes('windows-1252')) {\n        // Declared Latin-1 family: decode directly\n        xmlStr = buf.toString('latin1');\n      } else {\n        // Declared UTF-8 (or unknown): try UTF-8, but some feeds lie —\n        // if replacement chars appear, the bytes are actually Latin-1\n        xmlStr = buf.toString('utf-8');\n        if (xmlStr.includes('\\uFFFD')) {\n          xmlStr = buf.toString('latin1');\n        }\n      }\n    } else if (typeof response === 'string') {\n      xmlStr = response;\n    } else {\n      xmlStr = JSON.stringify(response);\n    }\n    \n    // Parse titles and links from XML using regex (works for RSS and Atom)\n    // Skip the first <title> (channel title)\n    const itemBlocks = xmlStr.split(/<item[\\s>]/i).slice(1);\n    // Also handle Atom <entry> format\n    const entryBlocks = xmlStr.split(/<entry[\\s>]/i).slice(1);\n    const blocks = itemBlocks.length > 0 ? itemBlocks : entryBlocks;\n    \n    for (const block of blocks) {\n      const titleMatch = block.match(/<title[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/title>/is);\n      const linkMatch = block.match(/<link[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/link>/is) \n                      || block.match(/<link[^>]*href=[\"']([^\"']+)[\"']/i);\n      \n      if (titleMatch) {\n        let title = titleMatch[1].trim();\n        // Decode HTML entities\n        title = title\n          .replace(/&amp;/g, '&')\n          .replace(/&lt;/g, '<')\n          .replace(/&gt;/g, '>')\n          .replace(/&quot;/g, '\"')\n          .replace(/&apos;/g, \"'\")\n          .replace(/&#(\\d+);/g, (m, c) => String.fromCharCode(parseInt(c)))\n          .replace(/&#x([0-9a-f]+);/gi, (m, c) => String.fromCharCode(parseInt(c, 16)));\n        \n        const link = linkMatch ? (linkMatch[1] || linkMatch[2] || '').trim() : '';\n        \n        results.push({\n          json: {\n            title: title,\n            link: link,\n            source: source,\n          }\n        });\n      }\n    }\n  } catch (err) {\n    console.log(`⚠️ Failed to fetch ${url}: ${err.message}`);\n  }\n}\n\nconsole.log(`🇧🇷🇵🇹 Fetched ${results.length} items from ${items.length} feeds`);\nreturn results;"
+      },
+      "name": "BR PT Fetch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        500,
+        1700
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst sections = {\n  cve: '🛡️ CVE Alerts', security_news: '🔐 Security News',\n  service: '⚠️ Service Disruptions', retrogaming: '🎮 Retrogaming',\n  scitech: '🔬 Science & Tech', world: '🌍 World News',\n  hackernews: '🟠 Hacker News', brpt: '🇧🇷🇵🇹 Brazil & Portugal', youtube: '📺 YouTube'\n};\n\nlet storyList = '', totalItems = 0;\nfor (const [key, label] of Object.entries(sections)) {\n  const group = items.filter(i => i.json.type === key).slice(0, 3);\n  if (group.length) {\n    storyList += `${label}:\\n${group.map(i => `\\u2022 ${i.json.title}`).join('\\n')}\\n\\n`;\n    totalItems += group.length;\n  }\n}\n\nif (totalItems === 0) {\n  return items.map(i => ({ json: { ...i.json, _aiBriefing: null, _storyOfTheDay: null } }));\n}\n\nconst dateStr = new Date().toLocaleDateString('en-GB', { weekday: 'long', month: 'long', day: 'numeric' });\nconst systemPrompt = `You are a news editor writing a concise daily briefing for a personal news digest bot.\\nGiven today's top filtered news stories by category, write:\\n1. A \"briefing\": 2-4 sentence executive summary of the most significant developments.\\n2. A \"storyOfTheDay\": one-line headline (emoji + max 80 chars) for the single most important story.\\nRules: factual and neutral, detect language from titles and respond in that language, output ONLY valid JSON.`;\n\nconst userPrompt = `Today's top news stories (${dateStr}):\\n\\n${storyList.substring(0, 1800)}Respond with JSON only:\\n{\"briefing\":\"...\",\"storyOfTheDay\":\"...\"}`;\n\nconst geminiKey = $env.GEMINI_API_KEY ?? $env.N8N_GEMINI_API_KEY ?? '';\nconst nvidiaKey = $env.NVIDIA_API_KEY ?? $env.N8N_NVIDIA_API_KEY ?? '';\nconst githubGpt5Key = $env.N8N_GITHUB_GPT5_KEY ?? '';\nconst cerebrasKey = $env.N8N_CEREBRAS_API_KEY ?? $env.CEREBRAS_API_KEY ?? '';\nconst mistralKey = $env.N8N_MISTRAL_API_KEY ?? $env.MISTRAL_API_KEY ?? '';\n\nlet briefing = null, storyOfTheDay = null;\n\nif (geminiKey) {\n  try {\n    const resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,\n      body: {\n        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],\n        systemInstruction: { parts: [{ text: systemPrompt }] },\n        generationConfig: { maxOutputTokens: 256, temperature: 0.3, responseMimeType: 'application/json' }\n      },\n      json: true, timeout: 15000,\n    });\n    const raw = resp.candidates?.[0]?.content?.parts?.[0]?.text || '';\n    const parsed = JSON.parse(raw);\n    briefing = typeof parsed.briefing === 'string' ? parsed.briefing.substring(0, 800) : null;\n    storyOfTheDay = typeof parsed.storyOfTheDay === 'string' ? parsed.storyOfTheDay.substring(0, 100) : null;\n    if (briefing) console.log(`✅ AI Briefing generated (${briefing.length} chars)`);\n  } catch (e) {\n    console.log(`⚠️ AI Briefing Gemini failed: ${e.message?.substring(0, 100)}`);\n  }\n}\n\n\nif (!briefing && githubGpt5Key) {\n  try {\n    const resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://models.inference.ai.azure.com/chat/completions',\n      headers: { Authorization: `Bearer ${githubGpt5Key}` },\n      body: {\n        model: 'gpt-4.5-preview', // Verify model name at github.com/marketplace/models\n        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],\n        max_tokens: 256, temperature: 0.3\n      },\n      json: true, timeout: 15000,\n    });\n    const raw = resp.choices?.[0]?.message?.content || '';\n    const jsonStr = raw.replace(/^```json\\s*/i, '').replace(/```\\s*$/, '').trim();\n    const parsed = JSON.parse(jsonStr);\n    briefing = typeof parsed.briefing === 'string' ? parsed.briefing.substring(0, 800) : null;\n    storyOfTheDay = typeof parsed.storyOfTheDay === 'string' ? parsed.storyOfTheDay.substring(0, 100) : null;\n    if (briefing) console.log(`✅ AI Briefing via GPT-5/GitHub (${briefing.length} chars)`);\n  } catch (e) {\n    console.log(`⚠️ AI Briefing GPT-5 failed: ${e.message?.substring(0, 100)}`);\n  }\n}\nif (!briefing && nvidiaKey) {\n  try {\n    const resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://integrate.api.nvidia.com/v1/chat/completions',\n      headers: { Authorization: `Bearer ${nvidiaKey}` },\n      body: {\n        model: 'meta/llama-3.3-70b-instruct',\n        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],\n        max_tokens: 256, temperature: 0.3\n      },\n      json: true, timeout: 15000,\n    });\n    const raw = resp.choices?.[0]?.message?.content || '';\n    const jsonStr = raw.replace(/^```json\\s*/i, '').replace(/```\\s*$/, '').trim();\n    const parsed = JSON.parse(jsonStr);\n    briefing = typeof parsed.briefing === 'string' ? parsed.briefing.substring(0, 800) : null;\n    storyOfTheDay = typeof parsed.storyOfTheDay === 'string' ? parsed.storyOfTheDay.substring(0, 100) : null;\n    if (briefing) console.log(`✅ AI Briefing via NVIDIA (${briefing.length} chars)`);\n  } catch (e) {\n    console.log(`⚠️ AI Briefing NVIDIA failed: ${e.message?.substring(0, 100)}`);\n  }\n}\n\n\nif (!briefing && cerebrasKey) {\n  try {\n    const resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://api.cerebras.ai/v1/chat/completions',\n      headers: { Authorization: `Bearer ${cerebrasKey}` },\n      body: {\n        model: 'llama-3.3-70b',\n        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],\n        max_tokens: 256, temperature: 0.3\n      },\n      json: true, timeout: 15000,\n    });\n    const raw = resp.choices?.[0]?.message?.content || '';\n    const jsonStr = raw.replace(/^```json\\s*/i, '').replace(/```\\s*$/, '').trim();\n    const parsed = JSON.parse(jsonStr);\n    briefing = typeof parsed.briefing === 'string' ? parsed.briefing.substring(0, 800) : null;\n    storyOfTheDay = typeof parsed.storyOfTheDay === 'string' ? parsed.storyOfTheDay.substring(0, 100) : null;\n    if (briefing) console.log(`✅ AI Briefing via Cerebras (${briefing.length} chars)`);\n  } catch (e) {\n    console.log(`⚠️ AI Briefing Cerebras failed: ${e.message?.substring(0, 100)}`);\n  }\n}\n\nif (!briefing && mistralKey) {\n  try {\n    const resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://api.mistral.ai/v1/chat/completions',\n      headers: { Authorization: `Bearer ${mistralKey}` },\n      body: {\n        model: 'mistral-small-latest',\n        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],\n        max_tokens: 256, temperature: 0.3, response_format: { type: 'json_object' }\n      },\n      json: true, timeout: 15000,\n    });\n    const raw = resp.choices?.[0]?.message?.content || '';\n    const jsonStr = raw.replace(/^```json\\s*/i, '').replace(/```\\s*$/, '').trim();\n    const parsed = JSON.parse(jsonStr);\n    briefing = typeof parsed.briefing === 'string' ? parsed.briefing.substring(0, 800) : null;\n    storyOfTheDay = typeof parsed.storyOfTheDay === 'string' ? parsed.storyOfTheDay.substring(0, 100) : null;\n    if (briefing) console.log(`✅ AI Briefing via Mistral (${briefing.length} chars)`);\n  } catch (e) {\n    console.log(`⚠️ AI Briefing Mistral failed: ${e.message?.substring(0, 100)}`);\n  }\n}\nreturn items.map(i => ({ json: { ...i.json, _aiBriefing: briefing, _storyOfTheDay: storyOfTheDay } }));"
+      },
+      "name": "Generate AI Briefing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{$json[\"chatId\"]}}",
+        "text": "={{$json[\"text\"]}}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": false
+        }
+      },
+      "name": "Send Digest Link",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        2900,
+        650
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "/data/digest-files/latest.html",
+        "binaryPropertyName": "data"
+      },
+      "name": "Write Latest Digest",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        2500,
+        650
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst item = items[0];\n\nconst baseUrl = ($env.DIGEST_PUBLIC_URL || '').replace(/\\/$/, '');\nconst digestUrl = baseUrl ? `${baseUrl}/latest.html` : null;\n\n// Strip attachment-specific footer, replace with web link\nconst summary = (item.json.summary || '').replace(/\\n\\n📎 Full digest[\\s\\S]*/m, '');\nconst text = digestUrl\n  ? `${summary}\\n\\n🌐 <a href=\"${digestUrl}\">View full digest online</a>`\n  : summary;\n\nreturn items.map(i => ({ json: { ...i.json, text, digestUrl } }));"
+      },
+      "name": "Prepare Digest Link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2700,
+        650
+      ]
+    },
+    {
+      "name": "Deduplicate BRPT",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        950,
+        1700
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst brptItems = items.filter(i => i.json.type === 'brpt');\nif (brptItems.length < 2) return items;\n\nconst geminiKey = $env.GEMINI_API_KEY ?? $env.N8N_GEMINI_API_KEY ?? '';\nconst cerebrasKey = $env.N8N_CEREBRAS_API_KEY ?? $env.CEREBRAS_API_KEY ?? '';\nconst mistralKey = $env.N8N_MISTRAL_API_KEY ?? $env.MISTRAL_API_KEY ?? '';\nif (!geminiKey && !cerebrasKey && !mistralKey) {\n  console.log('⚠️ No AI key available, skipping BRPT deduplication');\n  return items;\n}\n\nconst itemList = brptItems.map((item, idx) => ({\n  id: idx,\n  title: item.json.title,\n  source: item.json.source || '',\n  country: item.json.country || 'br',\n}));\n\nconst prompt = `You are a news deduplication assistant. Given news items from Brazilian and Portuguese news sources, identify which items cover the EXACT same news event (different sources reporting the same story).\n\nRules:\n- Only group items that report the SAME specific event\n- Articles merely on the same broad topic (e.g. \"Iran\") but covering different angles are NOT duplicates\n- Each group should have the most detailed/primary source first\n- Singletons (no duplicates) get their own group\n\nNews items:\n${itemList.map(i => '[' + i.id + '] (' + i.source + '/' + i.country + '): ' + i.title).join('\\n')}\n\nRespond ONLY with valid JSON: {\"groups\": [[0,2,5], [1], [3,4], ...]}`;\n\nlet groups = null;\ntry {\n  const resp = await this.helpers.httpRequest({\n    method: 'POST',\n    url: `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,\n    body: {\n      contents: [{ role: 'user', parts: [{ text: prompt }] }],\n      generationConfig: { maxOutputTokens: 2048, temperature: 0.1, responseMimeType: 'application/json' }\n    },\n    json: true,\n    timeout: 25000,\n  });\n  const raw = resp.candidates?.[0]?.content?.parts?.[0]?.text || '';\n  const parsed = JSON.parse(raw);\n  if (Array.isArray(parsed.groups)) {\n    groups = parsed.groups;\n    console.log(`✅ BRPT dedup: ${brptItems.length} items → ${groups.length} groups`);\n  }\n} catch (e) {\n  console.log(`⚠️ BRPT dedup failed: ${e.message?.substring(0, 120)}`);\n}\n\nif (!groups && cerebrasKey) {\n  try {\n    const resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://api.cerebras.ai/v1/chat/completions',\n      headers: { Authorization: `Bearer ${cerebrasKey}` },\n      body: {\n        model: 'llama-3.3-70b',\n        messages: [{ role: 'user', content: prompt }],\n        max_tokens: 2048, temperature: 0.1\n      },\n      json: true, timeout: 25000,\n    });\n    const raw = resp.choices?.[0]?.message?.content || '';\n    const jsonStr = raw.replace(/^```json\\s*/i, '').replace(/```\\s*$/, '').trim();\n    const parsed = JSON.parse(jsonStr);\n    if (Array.isArray(parsed.groups)) {\n      groups = parsed.groups;\n      console.log(`✅ BRPT dedup via Cerebras: ${brptItems.length} items → ${groups.length} groups`);\n    }\n  } catch (e) {\n    console.log(`⚠️ BRPT dedup Cerebras failed: ${e.message?.substring(0, 120)}`);\n  }\n}\nif (!groups && mistralKey) {\n  try {\n    const resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'https://api.mistral.ai/v1/chat/completions',\n      headers: { Authorization: `Bearer ${mistralKey}` },\n      body: {\n        model: 'mistral-small-latest',\n        messages: [{ role: 'user', content: prompt }],\n        max_tokens: 2048, temperature: 0.1, response_format: { type: 'json_object' }\n      },\n      json: true, timeout: 25000,\n    });\n    const raw = resp.choices?.[0]?.message?.content || '';\n    const jsonStr = raw.replace(/^```json\\s*/i, '').replace(/```\\s*$/, '').trim();\n    const parsed = JSON.parse(jsonStr);\n    if (Array.isArray(parsed.groups)) {\n      groups = parsed.groups;\n      console.log(`✅ BRPT dedup via Mistral: ${brptItems.length} items → ${groups.length} groups`);\n    }\n  } catch (e) {\n    console.log(`⚠️ BRPT dedup Mistral failed: ${e.message?.substring(0, 120)}`);\n  }\n}\nif (!groups) return items;\n\n// Sanitise AI output: remove out-of-range indices, drop empty groups\ngroups = groups\n  .map(g => g.filter(id => Number.isInteger(id) && id >= 0 && id < brptItems.length))\n  .filter(g => g.length > 0);\n\n// Ensure every index appears (add missing as singletons)\nconst seen = new Set(groups.flat());\nfor (let i = 0; i < brptItems.length; i++) {\n  if (!seen.has(i)) groups.push([i]);\n}\n\nconst processedBrpt = groups.map(group => {\n  const canonical = brptItems[group[0]].json;\n  const dupes = group.slice(1).map(id => ({\n    title: brptItems[id].json.title,\n    link: brptItems[id].json.link,\n    source: brptItems[id].json.source || '',\n    country: brptItems[id].json.country || 'br',\n  }));\n  return {\n    json: {\n      ...canonical,\n      duplicates: dupes.length > 0 ? dupes : undefined,\n    }\n  };\n});\n\nreturn [...items.filter(i => i.json.type !== 'brpt'), ...processedBrpt];\n"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"sendAudio\"]}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Has Audio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2700,
+        2600
+      ]
+    }
+  ],
+  "connections": {
+    "Cron Daily": {
+      "main": [
+        [
+          {
+            "node": "Fetch CVEs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Security News URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Service URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Retrogaming URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SciTech URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "World News URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "BR PT URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "YouTube URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Hacker News RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Command": {
+      "main": [
+        [
+          {
+            "node": "Is Help?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Help?": {
+      "main": [
+        [
+          {
+            "node": "Send Help",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is CVE Lookup?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is CVE Lookup?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Single CVE",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is AI?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is AI?": {
+      "main": [
+        [
+          {
+            "node": "Send AI Thinking",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Single CVE": {
+      "main": [
+        [
+          {
+            "node": "Format CVE Detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format CVE Detail": {
+      "main": [
+        [
+          {
+            "node": "Send CVE Detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send AI Thinking": {
+      "main": [
+        [
+          {
+            "node": "Call AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Audio Response?": {
+      "main": [
+        [
+          {
+            "node": "Prepare TTS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare TTS": {
+      "main": [
+        [
+          {
+            "node": "Fetch TTS Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch TTS Audio": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audio Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Processing": {
+      "main": [
+        [
+          {
+            "node": "Capture Msg ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Capture Msg ID": {
+      "main": [
+        [
+          {
+            "node": "Route to Fetchers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route to Fetchers": {
+      "main": [
+        [
+          {
+            "node": "Fetch CVEs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Security News URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Service URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Retrogaming URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SciTech URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "World News URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "BR PT URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "YouTube URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Hacker News RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch CVEs": {
+      "main": [
+        [
+          {
+            "node": "Filter CVEs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security News URLs": {
+      "main": [
+        [
+          {
+            "node": "Security News RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security News RSS": {
+      "main": [
+        [
+          {
+            "node": "Filter Security News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Service URLs": {
+      "main": [
+        [
+          {
+            "node": "Service Status RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Service Status RSS": {
+      "main": [
+        [
+          {
+            "node": "Filter Services",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrogaming URLs": {
+      "main": [
+        [
+          {
+            "node": "Retrogaming RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrogaming RSS": {
+      "main": [
+        [
+          {
+            "node": "Filter Retrogaming",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SciTech URLs": {
+      "main": [
+        [
+          {
+            "node": "SciTech RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SciTech RSS": {
+      "main": [
+        [
+          {
+            "node": "Filter SciTech Trending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "World News URLs": {
+      "main": [
+        [
+          {
+            "node": "World News RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "World News RSS": {
+      "main": [
+        [
+          {
+            "node": "Filter World Trending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BR PT URLs": {
+      "main": [
+        [
+          {
+            "node": "BR PT Fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube URLs": {
+      "main": [
+        [
+          {
+            "node": "YouTube RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube RSS": {
+      "main": [
+        [
+          {
+            "node": "Filter YouTube Recent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hacker News RSS": {
+      "main": [
+        [
+          {
+            "node": "Filter HN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter CVEs": {
+      "main": [
+        [
+          {
+            "node": "Merge 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Security News": {
+      "main": [
+        [
+          {
+            "node": "Merge 1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 1": {
+      "main": [
+        [
+          {
+            "node": "Merge 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Services": {
+      "main": [
+        [
+          {
+            "node": "Merge 2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 2": {
+      "main": [
+        [
+          {
+            "node": "Merge 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Retrogaming": {
+      "main": [
+        [
+          {
+            "node": "Merge 3",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 3": {
+      "main": [
+        [
+          {
+            "node": "Merge 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter SciTech Trending": {
+      "main": [
+        [
+          {
+            "node": "Merge 4",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 4": {
+      "main": [
+        [
+          {
+            "node": "Merge 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter World Trending": {
+      "main": [
+        [
+          {
+            "node": "Merge 5",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 5": {
+      "main": [
+        [
+          {
+            "node": "Merge 6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter HN": {
+      "main": [
+        [
+          {
+            "node": "Merge 6",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 6": {
+      "main": [
+        [
+          {
+            "node": "Merge 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter BR PT Trending": {
+      "main": [
+        [
+          {
+            "node": "Deduplicate BRPT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge 7": {
+      "main": [
+        [
+          {
+            "node": "Merge 8",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter YouTube Recent": {
+      "main": [
+        [
+          {
+            "node": "Merge 8",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge 8": {
+      "main": [
+        [
+          {
+            "node": "Tag Category",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tag Category": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Condense Digest": {
+      "main": [
+        [
+          {
+            "node": "Has Msg ID?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Processing Msg": {
+      "main": [
+        []
+      ]
+    },
+    "Call AI": {
+      "main": [
+        [
+          {
+            "node": "Is Audio Response?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Msg ID?": {
+      "main": [
+        [
+          {
+            "node": "Is Text Cron?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Text Cmd?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Text Cmd?": {
+      "main": [
+        [
+          {
+            "node": "Edit Text Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete Processing Msg",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Write Latest Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Text Cron?": {
+      "main": [
+        [
+          {
+            "node": "Send New Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Write Latest Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BR PT Fetch": {
+      "main": [
+        [
+          {
+            "node": "Filter BR PT Trending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Briefing": {
+      "main": [
+        [
+          {
+            "node": "Condense Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Latest Digest": {
+      "main": [
+        [
+          {
+            "node": "Prepare Digest Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Digest Link": {
+      "main": [
+        [
+          {
+            "node": "Send Digest Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicate BRPT": {
+      "main": [
+        [
+          {
+            "node": "Merge 7",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Prepare Audio Send": {
+      "main": [
+        [
+          {
+            "node": "Has Audio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Audio?": {
+      "main": [
+        [
+          {
+            "node": "Edit After Audio",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Voice Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit After Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

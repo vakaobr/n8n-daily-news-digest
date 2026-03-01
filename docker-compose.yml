@@ -1,0 +1,81 @@
+services:
+
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: n8n
+    volumes:
+      - ./postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U n8n"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nginx-digest:
+    build: .
+    volumes:
+      - ./digest-files:/srv/digest
+    ports:
+      - "127.0.0.1:8080:80"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 80 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  n8n:
+    image: n8nio/n8n:2.10.2
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nginx-digest:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: n8n
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_RESTRICT_FILE_ACCESS_TO: /data/digest-files/
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "false"
+
+      DIGEST_PUBLIC_URL: ${DIGEST_PUBLIC_URL}
+
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      N8N_GEMINI_API_KEY: ${GEMINI_API_KEY}
+      N8N_NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      N8N_GITHUB_GPT5_KEY: ${N8N_GITHUB_GPT5_KEY}
+      N8N_CEREBRAS_API_KEY: ${N8N_CEREBRAS_API_KEY}
+      N8N_MISTRAL_API_KEY: ${N8N_MISTRAL_API_KEY}
+      N8N_GROQ_API_KEY: ${N8N_GROQ_API_KEY}
+      N8N_TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+
+      N8N_HOST: ${DOMAIN}
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://${DOMAIN}/
+
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: admin
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_ADMIN_PASSWORD}
+      N8N_SECURE_COOKIE: "true"
+
+      EXECUTIONS_PROCESS: main
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: 168
+
+      GENERIC_TIMEZONE: UTC
+
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+      - ./digest-files:/data/digest-files
