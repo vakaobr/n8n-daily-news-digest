@@ -448,7 +448,7 @@ Replace or reorder models. All models must support audio input via the Gemini `v
 | Broken accents / diamonds (ã→â–ï¿½) | `BR PT Fetch` auto-detects mislabelled UTF-8 feeds and re-decodes as Latin-1. If still broken on non-BRPT feeds, those filters include an `_d()` HTML entity decoder; check your n8n container's locale. |
 | "message to edit not found" | The placeholder message was deleted before the edit could happen. Check `Capture Msg ID` node. |
 | Webhook not registering | n8n must be publicly accessible via HTTPS. Check `WEBHOOK_URL` env var. Try deactivating and reactivating the workflow. |
-| Voice transcription fails | Gemini models are tried in order (2.0-flash → 2.5-flash → 2.0-flash-lite), each with separate rate limits. If all 3 are exhausted, Groq Whisper is the last resort. Check `Call AI` node execution log for provider-specific errors. |
+| Voice transcription fails | Gemini models are tried in order (2.0-flash → 2.5-flash → 2.0-flash-lite), each with separate rate limits. If all 3 are exhausted, Groq Whisper is the last resort. **Note:** Groq multipart upload is experimental on n8n 2.x due to `httpRequest` binary handling limitations — it may not work reliably on all n8n versions. Check `Call AI` node execution log for provider-specific errors. |
 | Voice reply sent as text | The `Is Audio Response?` IF node must use a **boolean** condition (not string) checking `respondAsAudio`. Re-import the workflow if it was modified. |
 | Voice reply doesn't work | Google TTS has rate limits. `Fetch TTS Audio` has `continueOnFail` enabled — if TTS fails, the bot automatically falls back to text with a "🎤 Voice reply unavailable" indicator. Check the node execution log for details. |
 | Digest link returns 404 | The `nginx-digest` container is running but no digest has been generated yet. Trigger `/all` or wait for the cron to run. |
@@ -476,7 +476,7 @@ Replace or reorder models. All models must support audio input via the Gemini `v
 
 \* At least one AI key is required for AI commands and BRPT deduplication. The fallback chain is: Gemini → GPT-5 → NVIDIA → Cerebras → Mistral.
 
-\*\* Voice transcription uses a 3-model Gemini chain (gemini-2.0-flash → gemini-2.5-flash → gemini-2.0-flash-lite) via base64 multimodal input, with Groq Whisper as last resort. Each Gemini model has separate rate limits. At least one of `N8N_GEMINI_API_KEY` or `N8N_GROQ_API_KEY` is needed for voice messages to work. Get a free Groq key at [console.groq.com](https://console.groq.com).
+\*\* Voice transcription uses a 3-model Gemini chain (gemini-2.0-flash → gemini-2.5-flash → gemini-2.0-flash-lite) via base64 multimodal input, with Groq Whisper as last resort. Each Gemini model has separate rate limits. At least one of `N8N_GEMINI_API_KEY` or `N8N_GROQ_API_KEY` is needed for voice messages to work. Groq multipart is experimental on n8n 2.x (`httpRequest` may not reliably send binary multipart). Get a free Groq key at [console.groq.com](https://console.groq.com).
 
 ---
 
